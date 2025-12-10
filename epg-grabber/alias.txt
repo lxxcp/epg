@@ -1,8 +1,8 @@
 # 格式: 标准名称|别名1,别名2,别名3,...
 4KUHD|纯享4K,纯享4k
 CCTV-4 中文国际|CCTV-4 (亚洲)
-CCTV-4 中文国际欧洲|CCTV-4 (欧洲)
-CCTV-4 中文国际美洲|CCTV-4 (美洲)
+CCTV-4 欧洲|CCTV-4 (欧洲),CCTV-4 中文国际欧洲
+CCTV-4 美洲|CCTV-4 (美洲),CCTV-4 中文国际美洲
 CCTV4K 超高清|CCTV-4K
 CCTV兵器科技|兵器科技,CCTV-兵器科技
 CCTV卫生健康|卫生健康,CCTV-卫生健康
@@ -10,7 +10,7 @@ CETV1|CETV-1,教育一套,中国教育一套,中国教育1套
 CETV2|CETV-2,教育二套,中国教育二套,中国教育2套
 CETV3|CETV-3,教育三套,中国教育三套,中国教育3套
 CETV4|CETV-4,教育四套,中国教育四套,中国教育4套
-CCTV早期教育|早期教育
+CETV早期教育|早期教育,CCTV早期教育
 CGTN俄语|CCTV-Русский
 CGTN法语|CCTV-Français
 CGTN西语|CCTV-Español

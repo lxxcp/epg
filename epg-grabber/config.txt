@@ -16,8 +16,8 @@ CCTV-14 少儿
 CCTV-15 音乐
 CCTV-16 奥林匹克
 CCTV-17 农业农村
-CCTV-4 中文国际欧洲
-CCTV-4 中文国际美洲
+CCTV-4 欧洲
+CCTV-4 美洲
 CCTV4K 超高清
 CCTV8K 超高清
 CCTV-16 奥林匹克4K
@@ -56,7 +56,7 @@ CETV1
 CETV2
 CETV3
 CETV4
-CCTV早期教育
+CETV早期教育
 中国天气
 书画
 音像世界
