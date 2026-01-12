@@ -226,6 +226,8 @@ if __name__ == "__main__":
         'https://raw.githubusercontent.com/zsz520/epg/main/cqlaidian.xml.gz',
         'https://raw.githubusercontent.com/zsz520/epg/main/fjyd.xml.gz',
         'https://raw.githubusercontent.com/zsz520/epg/main/migu.xml.gz',
+        'https://github.com/peterHchina/iptv/blob/main/EPG.xml',
+
     ]
     
     process_sources(epg_urls, alias_mapping, config_names)
