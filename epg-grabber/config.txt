@@ -18,8 +18,8 @@ CCTV-16 奥林匹克
 CCTV-17 农业农村
 CCTV-4 欧洲
 CCTV-4 美洲
-CCTV4K 超高清
-CCTV8K 超高清
+CCTV4K
+CCTV8K
 CCTV-16 奥林匹克4K
 CGTN
 CGTN纪录
@@ -3600,6 +3600,7 @@ IPTV法治
 哒啵电竞
 品质大剧
 追番必看
+谍战剧场
 CCTV中视购物
 4KUHD
 
