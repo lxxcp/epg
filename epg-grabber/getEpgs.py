@@ -206,6 +206,10 @@ if __name__ == "__main__":
     epg_urls = [
         'https://raw.githubusercontent.com/lxxcp/epg/main/cntvepg.xml.gz',
         'https://raw.githubusercontent.com/lxxcp/epg/main/tvmao.xml.gz',
+        'https://raw.githubusercontent.com/fanmingming/live/refs/heads/main/e.xml',
+        'https://github.com/plsy1/epg/blob/main/e/seven-days.xml.gz',
+        'https://github.com/Li-Xingyu/ZJ_IPTV_EPG/blob/main/epg.xml',
+        'https://github.com/zzq1234567890/epg/raw/refs/heads/main/swepg.xml.gz',
         'https://iptv.crestekk.cn/epgphp/t.xml.gz',
         'https://raw.githubusercontent.com/mytv-android/myEPG/master/output/epg.gz',
         'https://epg.pw/xmltv/epg_CN.xml.gz',
