@@ -7,48 +7,48 @@ from copy import deepcopy
 import datetime
 import pytz
 from xml.sax.saxutils import escape
+
 # 配置参数
 config_file = os.path.join(os.path.dirname(__file__), 'config.txt')
-alias_file = os.path.join(os.path.dirname(__file__), 'alias.txt')  # 改为txt文件
 output_file_gz = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'e.xml.gz')
 TIMEZONE = pytz.timezone('Asia/Shanghai')
 
-def load_config(config_file):
-    """加载config.txt中的有效频道名称集合"""
+def load_config_and_alias(config_file):
+    """从合并的配置文件中加载频道名称和别名映射"""
     config_names = set()
+    alias_mapping = {}
+    
     try:
         with open(config_file, 'r', encoding='utf-8') as file:
             for line in file:
                 cleaned_line = line.strip()
-                if cleaned_line:
-                    config_names.add(cleaned_line)
-        logging.info(f"Loaded {len(config_names)} channels from {config_file}")
-    except Exception as e:
-        logging.error(f"Failed to load config: {e}")
-    return config_names
-
-def load_epg_mapping(alias_file):
-    """从文本文件构建别名到标准名称的映射表"""
-    alias_mapping = {}
-    try:
-        with open(alias_file, 'r', encoding='utf-8') as file:
-            for line in file:
-                line = line.strip()
-                if not line or line.startswith('#'):
+                if not cleaned_line or cleaned_line.startswith('#'):
                     continue
                 
-                if '|' in line:
-                    standard_name, aliases_str = line.split('|', 1)
-                    standard_name = standard_name.strip()
-                    aliases = [a.strip() for a in aliases_str.split(',') if a.strip()]
-                    
-                    for alias in aliases:
+                # 按逗号分割
+                parts = [p.strip() for p in cleaned_line.split(',') if p.strip()]
+                
+                if len(parts) == 0:
+                    continue
+                
+                # 第一个总是标准名称
+                standard_name = parts[0]
+                
+                # 添加到配置名称集合
+                config_names.add(standard_name)
+                
+                # 如果有别名，添加到映射表
+                if len(parts) > 1:
+                    for alias in parts[1:]:
                         alias_mapping[alias] = standard_name
-                    
-        logging.info(f"Loaded {len(alias_mapping)} alias mappings from {alias_file}")
+        
+        logging.info(f"Loaded {len(config_names)} channels and {len(alias_mapping)} alias mappings from {config_file}")
+        return config_names, alias_mapping
+        
     except Exception as e:
-        logging.error(f"Failed to load alias mapping: {e}")
-    return alias_mapping
+        logging.error(f"Failed to load config: {e}")
+        return set(), {}
+
 def map_channel(display_name, config_names, alias_mapping):
     """频道匹配核心逻辑"""
     # 1. 直接匹配config.txt
@@ -198,9 +198,8 @@ if __name__ == "__main__":
         datefmt='%Y-%m-%d %H:%M:%S'
     )
     
-    # 初始化配置
-    config_names = load_config(config_file)
-    alias_mapping = load_epg_mapping(alias_file)
+    # 初始化配置（从合并的文件中加载）
+    config_names, alias_mapping = load_config_and_alias(config_file)
     
     # 数据源列表
     epg_urls = [
@@ -210,19 +209,19 @@ if __name__ == "__main__":
         'https://github.com/plsy1/epg/blob/main/e/seven-days.xml.gz',
         'https://github.com/Li-Xingyu/ZJ_IPTV_EPG/blob/main/epg.xml',
         'https://github.com/zzq1234567890/epg/raw/refs/heads/main/swepg.xml.gz',
-        'https://iptv.crestekk.cn/epgphp/t.xml.gz',
+        'https://epg.zsdc.eu.org/t.xml',
         'https://raw.githubusercontent.com/mytv-android/myEPG/master/output/epg.gz',
         'https://epg.pw/xmltv/epg_CN.xml.gz',
-	'https://epg.pw/xmltv/epg_TW.xml.gz',
-	'https://epg.pw/xmltv/epg_HK.xml.gz',
+        'https://epg.pw/xmltv/epg_TW.xml.gz',
+        'https://epg.pw/xmltv/epg_HK.xml.gz',
         'http://liliu.serv00.net/epg/all.xml.gz',
-  	'https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz',
+        'https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz',
         'https://gitee.com/taksssss/tv/raw/main/epg/erw.xml.gz',
         'https://gitee.com/taksssss/tv/raw/main/epg/112114.xml.gz',
         'https://gitee.com/taksssss/tv/raw/main/epg/51zmt.xml.gz',
         'https://gitee.com/taksssss/tv/raw/main/epg/epgpw_cn.xml.gz',
-	'https://gitee.com/taksssss/tv/raw/main/epg/epgpw_hk.xml.gz',
-	'https://gitee.com/taksssss/tv/raw/main/epg/epgpw_tw.xml.gz',
+        'https://gitee.com/taksssss/tv/raw/main/epg/epgpw_hk.xml.gz',
+        'https://gitee.com/taksssss/tv/raw/main/epg/epgpw_tw.xml.gz',
         'https://raw.githubusercontent.com/zsz520/epg/main/bjiptv.xml.gz',
         'https://raw.githubusercontent.com/zsz520/epg/main/chuanliu.xml.gz',
         'https://raw.githubusercontent.com/zsz520/epg/main/cqcu.xml.gz',
@@ -231,7 +230,6 @@ if __name__ == "__main__":
         'https://raw.githubusercontent.com/zsz520/epg/main/fjyd.xml.gz',
         'https://raw.githubusercontent.com/zsz520/epg/main/migu.xml.gz',
         'https://github.com/peterHchina/iptv/blob/main/EPG.xml',
-
     ]
     
     process_sources(epg_urls, alias_mapping, config_names)
