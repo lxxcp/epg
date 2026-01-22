@@ -7,6 +7,10 @@ from copy import deepcopy
 import datetime
 import pytz
 from xml.sax.saxutils import escape
+import urllib3
+
+# 禁用SSL警告
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # 配置参数
 config_file = os.path.join(os.path.dirname(__file__), 'config.txt')
@@ -53,14 +57,14 @@ def map_channel(display_name, config_names, alias_mapping):
     """频道匹配核心逻辑"""
     # 1. 直接匹配config.txt
     if display_name in config_names:
-        logging.info(f"直接匹配成功: {display_name}")
+        logging.debug(f"直接匹配成功: {display_name}")
         return display_name
     
     # 2. 通过映射表匹配
     mapped_name = alias_mapping.get(display_name)
     if mapped_name:
         if mapped_name in config_names:
-            logging.info(f"别名映射成功: {display_name} -> {mapped_name}")
+            logging.debug(f"别名映射成功: {display_name} -> {mapped_name}")
             return mapped_name
         else:
             logging.warning(f"映射目标不在配置中: {mapped_name} (来自 {display_name})")
@@ -82,6 +86,31 @@ def parse_epg_time(time_str):
         logging.warning(f"Time parse failed: {time_str} - {e}")
         return None
 
+def is_gzipped(data):
+    """检查数据是否为gzip格式"""
+    return len(data) > 2 and data[:2] == b'\x1f\x8b'
+
+def decode_content(content, url):
+    """解码内容，处理gzip和非gzip格式"""
+    try:
+        # 先尝试检测是否是gzip
+        if is_gzipped(content):
+            try:
+                decoded = gzip.decompress(content)
+                logging.debug(f"成功解压gzip内容: {url}")
+                return decoded
+            except gzip.BadGzipFile:
+                # 如果不是有效的gzip，尝试当作普通xml处理
+                logging.debug(f"内容标记为gzip但解压失败，尝试作为XML处理: {url}")
+                return content
+        else:
+            # 不是gzip格式，直接返回
+            logging.debug(f"处理普通XML内容: {url}")
+            return content
+    except Exception as e:
+        logging.warning(f"内容解码失败 {url}: {e}")
+        return content
+
 def process_sources(urls, alias_mapping, config_names):
     channels = {}  # 频道ID: 频道节点
     programmes = {}  # 频道ID: [节目列表]
@@ -90,23 +119,70 @@ def process_sources(urls, alias_mapping, config_names):
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     logging.info(f"当前时间: {now}, 今日开始时间: {today_start}")
 
+    # 创建session并禁用SSL验证（解决证书问题）
+    session = requests.Session()
+    session.verify = False  # 禁用SSL验证
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/xml, text/xml, */*',
+        'Accept-Encoding': 'gzip, deflate'
+    }
+
     for url in urls:
         try:
             # 获取并解析EPG数据
             logging.info(f"Processing: {url}")
-            response = requests.get(url, timeout=15)
+            
+            # 转换GitHub页面链接为raw链接
+            if 'github.com' in url and '/blob/' in url:
+                url = url.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/')
+                logging.info(f"转换为raw链接: {url}")
+            
+            response = session.get(url, headers=headers, timeout=20, verify=False)
             response.raise_for_status()
             
-            if url.endswith('.gz') or 'gzip' in response.headers.get('Content-Encoding', ''):
-                content = gzip.decompress(response.content)
+            # 获取原始内容
+            raw_content = response.content
+            
+            # 根据URL扩展名和内容类型决定处理方式
+            if url.endswith('.gz'):
+                # 明确是.gz文件，尝试解压
+                try:
+                    content = gzip.decompress(raw_content)
+                except Exception as e:
+                    logging.warning(f"无法解压.gz文件 {url}: {e}")
+                    # 如果不是有效的gzip，尝试当作普通内容处理
+                    content = raw_content
             else:
-                content = response.content
-                
-            root = ET.fromstring(content)
+                # 不是.gz文件，直接使用
+                content = raw_content
+            
+            # 确保内容有效
+            if not content.strip():
+                logging.warning(f"Empty content from {url}")
+                continue
+            
+            # 尝试解析XML
+            try:
+                root = ET.fromstring(content)
+            except ET.ParseError as e:
+                logging.warning(f"XML解析失败 {url}: {e}")
+                # 尝试检测编码问题
+                try:
+                    # 尝试utf-8解码
+                    text_content = content.decode('utf-8')
+                    root = ET.fromstring(text_content)
+                except:
+                    # 尝试其他常见编码
+                    try:
+                        text_content = content.decode('gbk')
+                        root = ET.fromstring(text_content)
+                    except:
+                        logging.error(f"无法解析XML内容 {url}")
+                        continue
             
             # 构建频道映射表
             channel_map = {}
-            # 修改后的频道处理部分
             for channel in root.findall('channel'):
                 channel_id = channel.get('id')
                 # 获取display-name元素
@@ -128,9 +204,10 @@ def process_sources(urls, alias_mapping, config_names):
                             new_channel.remove(dn)
                         ET.SubElement(new_channel, 'display-name', {'lang': 'zh'}).text = mapped_id
                         channels[mapped_id] = new_channel
-                        logging.info(f"添加频道: {mapped_id} (原名称: {display_name})")
+                        logging.debug(f"添加频道: {mapped_id} (原名称: {display_name})")
             
             # 处理节目信息
+            prog_count = 0
             for programme in root.findall('programme'):
                 original_id = programme.get('channel')
                 mapped_id = channel_map.get(original_id)
@@ -157,8 +234,9 @@ def process_sources(urls, alias_mapping, config_names):
                         new_prog.set('stop', stop_time.strftime("%Y%m%d%H%M%S +0800"))
                 
                 programmes.setdefault(mapped_id, []).append(new_prog)
+                prog_count += 1
                 
-            logging.info(f"Processed: {len(channel_map)} channels, {len(programmes)} programmes from {url}")
+            logging.info(f"Processed: {len(channel_map)} channels, {prog_count} programmes from {url}")
             
         except Exception as e:
             logging.error(f"Failed to process {url}: {e}")
@@ -174,7 +252,9 @@ def process_sources(urls, alias_mapping, config_names):
         seen = set()
         unique_progs = []
         for p in progs:
-            key = f"{p.get('start')}|{p.find('title').text if p.find('title') else ''}"
+            title_elem = p.find('title')
+            title_text = title_elem.text if title_elem is not None and title_elem.text else ''
+            key = f"{p.get('start')}|{title_text}"
             if key not in seen:
                 seen.add(key)
                 unique_progs.append(p)
@@ -187,7 +267,7 @@ def process_sources(urls, alias_mapping, config_names):
         with gzip.open(output_file_gz, 'wb') as f:
             f.write(b'<?xml version="1.0" encoding="utf-8"?>\n')
             f.write(xml_str)
-        logging.info(f"EPG generated: {len(channels)} channels, {total_progs} programmes")
+        logging.info(f"EPG生成成功: {len(channels)} 频道, {total_progs} 个节目")
     except Exception as e:
         logging.error(f"Failed to save EPG: {e}")
 
@@ -201,7 +281,7 @@ if __name__ == "__main__":
     # 初始化配置（从合并的文件中加载）
     config_names, alias_mapping = load_config_and_alias(config_file)
     
-    # 数据源列表
+    # 数据源列表（修正版本）
     epg_urls = [
         'https://raw.githubusercontent.com/lxxcp/epg/main/cntvepg.xml.gz',
         'https://raw.githubusercontent.com/lxxcp/epg/main/tvmao.xml.gz',
@@ -209,18 +289,18 @@ if __name__ == "__main__":
         'https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz',
         'https://raw.githubusercontent.com/Li-Xingyu/ZJ_IPTV_EPG/main/epg.xml',
         'https://raw.githubusercontent.com/zzq1234567890/epg/main/swepg.xml.gz',
-        'https://raw.githubusercontent.com/mytv-android/myEPG/master/output/epg.gz',
         'https://epg.zsdc.eu.org/t.xml',
+        'https://raw.githubusercontent.com/mytv-android/myEPG/master/output/epg.gz',
         'https://epg.pw/xmltv/epg_CN.xml.gz',
         'https://epg.pw/xmltv/epg_TW.xml.gz',
         'https://epg.pw/xmltv/epg_HK.xml.gz',
         'http://liliu.serv00.net/epg/all.xml.gz',
-        'https://gitee.com/taksssss/tv/raw/main/epg/erw.xml.gz',
-        'https://gitee.com/taksssss/tv/raw/main/epg/112114.xml.gz',
-        'https://gitee.com/taksssss/tv/raw/main/epg/51zmt.xml.gz',
-        'https://gitee.com/taksssss/tv/raw/main/epg/epgpw_cn.xml.gz',
-        'https://gitee.com/taksssss/tv/raw/main/epg/epgpw_hk.xml.gz',
-        'https://gitee.com/taksssss/tv/raw/main/epg/epgpw_tw.xml.gz',
+        'https://raw.githubusercontent.com/taksssss/tv/main/epg/erw.xml.gz',
+        'https://raw.githubusercontent.com/taksssss/tv/main/epg/112114.xml.gz',
+        'https://raw.githubusercontent.com/taksssss/tv/main/epg/51zmt.xml.gz',
+        'https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_cn.xml.gz',
+        'https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_hk.xml.gz',
+        'https://raw.githubusercontent.com/taksssss/tv/main/epg/epgpw_tw.xml.gz',
         'https://raw.githubusercontent.com/zsz520/epg/main/bjiptv.xml.gz',
         'https://raw.githubusercontent.com/zsz520/epg/main/chuanliu.xml.gz',
         'https://raw.githubusercontent.com/zsz520/epg/main/cqcu.xml.gz',
