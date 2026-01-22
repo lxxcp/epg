@@ -205,17 +205,16 @@ if __name__ == "__main__":
     epg_urls = [
         'https://raw.githubusercontent.com/lxxcp/epg/main/cntvepg.xml.gz',
         'https://raw.githubusercontent.com/lxxcp/epg/main/tvmao.xml.gz',
-        'https://raw.githubusercontent.com/fanmingming/live/refs/heads/main/e.xml',
-        'https://github.com/plsy1/epg/blob/main/e/seven-days.xml.gz',
-        'https://github.com/Li-Xingyu/ZJ_IPTV_EPG/blob/main/epg.xml',
-        'https://github.com/zzq1234567890/epg/raw/refs/heads/main/swepg.xml.gz',
-        'https://epg.zsdc.eu.org/t.xml',
+        'https://raw.githubusercontent.com/fanmingming/live/main/e.xml',
+        'https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz',
+        'https://raw.githubusercontent.com/Li-Xingyu/ZJ_IPTV_EPG/main/epg.xml',
+        'https://raw.githubusercontent.com/zzq1234567890/epg/main/swepg.xml.gz',
         'https://raw.githubusercontent.com/mytv-android/myEPG/master/output/epg.gz',
+        'https://epg.zsdc.eu.org/t.xml',
         'https://epg.pw/xmltv/epg_CN.xml.gz',
         'https://epg.pw/xmltv/epg_TW.xml.gz',
         'https://epg.pw/xmltv/epg_HK.xml.gz',
         'http://liliu.serv00.net/epg/all.xml.gz',
-        'https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz',
         'https://gitee.com/taksssss/tv/raw/main/epg/erw.xml.gz',
         'https://gitee.com/taksssss/tv/raw/main/epg/112114.xml.gz',
         'https://gitee.com/taksssss/tv/raw/main/epg/51zmt.xml.gz',
@@ -229,7 +228,7 @@ if __name__ == "__main__":
         'https://raw.githubusercontent.com/zsz520/epg/main/cqlaidian.xml.gz',
         'https://raw.githubusercontent.com/zsz520/epg/main/fjyd.xml.gz',
         'https://raw.githubusercontent.com/zsz520/epg/main/migu.xml.gz',
-        'https://github.com/peterHchina/iptv/blob/main/EPG.xml',
+        'https://raw.githubusercontent.com/peterHchina/iptv/blob/main/EPG.xml',
     ]
     
     process_sources(epg_urls, alias_mapping, config_names)
