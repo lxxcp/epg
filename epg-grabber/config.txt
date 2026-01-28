@@ -1,7 +1,7 @@
 CCTV-1 综合
 CCTV-2 财经
 CCTV-3 综艺
-CCTV-4 中文国际,CCTV4亚洲
+CCTV-4 中文国际,CCTV-4 (亚洲)
 CCTV-5 体育
 CCTV-5+ 体育赛事
 CCTV-6 电影
@@ -19,7 +19,7 @@ CCTV-16 奥林匹克4K,CCTV16
 CCTV-17 农业农村,CCTV-17农业农村
 CCTV-4 欧洲,CCTV-4 (欧洲),CCTV-4 中文国际欧洲,CCTV4欧洲,CCTV4EUO
 CCTV-4 美洲,CCTV-4 (美洲),CCTV-4 中文国际美洲,CCTV4美洲,CCTV4AME
-CCTV4K,CCTV4K 超高清,CCTV-4K超高清
+CCTV4K,CCTV-4K,CCTV4K 超高清,CCTV-4K超高清
 CCTV8K,CCTV8K 超高清
 CGTN,CGTN英语
 CGTN俄语,CCTV-Русский,CGTN俄罗斯语
@@ -2941,7 +2941,7 @@ BRTV卡酷少儿,北京卡酷少儿,卡酷少儿,BRTV卡酷少儿,BRTV卡酷少�
 楚雄新闻
 文山新闻综合
 迪庆新闻综合
-迪庆藏语
+迪庆藏语,迪庆藏语综合
 个旧综合
 楚雄综合
 开远综合
@@ -3205,7 +3205,7 @@ BRTV卡酷少儿,北京卡酷少儿,卡酷少儿,BRTV卡酷少儿,BRTV卡酷少�
 西藏影视文化
 阿里综合
 拉萨综合
-拉萨藏语
+拉萨藏语,拉萨藏语综合
 拉萨文化旅游
 那曲综合
 林芝综合
@@ -3437,14 +3437,6 @@ TVBS精采台,TVBS精采台
 TVBS欢乐台,TVBS歡樂台
 TVBS综艺台,TVBS綜藝台
 国家地理
-IPTV少儿动画,少儿动画
-IPTV热播剧场,热播剧场,热播剧场专区
-IPTV相声小品,相声小品
-IPTV经典电影,经典电影,经典电影专区
-IPTV魅力时尚,魅力时尚
-IPTV电视剧,电视剧
-IPTV野外,野外
-IPTV法治,法治
 爱青春,iHOT爱青春
 爱院线,iHOT爱院线
 爱都市,iHOT爱都市
@@ -3516,21 +3508,29 @@ IPTV法治,法治
 哒啵电竞,NewTV哒啵电竞,NEWTV哒啵电竞
 品质大剧,NewTV品质大剧,NEWTV品质大剧
 谍战剧场,NewTV谍战剧场,NEWTV谍战剧场,IPTV谍战剧场
-光影
-军事
-动画
-台球
-国学
-地理
-墨宝
-早教
-星影
-精选
-美妆
-解密
-鉴赏
-高网
-新华社全球连线
+IPTV少儿动画,少儿动画
+IPTV热播剧场,热播剧场,热播剧场专区
+IPTV相声小品,相声小品
+IPTV经典电影,经典电影,经典电影专区
+IPTV魅力时尚,魅力时尚
+IPTV电视剧,电视剧
+IPTV野外,野外
+IPTV法治,法治
+IPTV光影,光影
+IPTV军事,军事
+IPTV动画,动画
+IPTV台球,台球
+IPTV国学,国学
+IPTV地理,地理
+IPTV墨宝,墨宝
+IPTV早教,早教
+IPTV星影,星影
+IPTV精选,精选
+IPTV美妆,美妆
+IPTV解密,解密
+IPTV鉴赏,鉴赏
+IPTV高网,高网
+新华全球连线
 新华社
 探索频道
 探索剧场
