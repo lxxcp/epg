@@ -1,97 +1,133 @@
 # -*- coding: utf-8 -*-
-import re
 import pytz
 import sys
 import requests
 import gzip
-from lxml import html
-from datetime import datetime, timezone, timedelta
-from html import escape 
+from datetime import datetime, timedelta
+from html import escape
 
 tz = pytz.timezone('Asia/Shanghai')
 
-tz = pytz.timezone('Asia/Shanghai')
-
+# 频道列表（你原来的列表）
 cctv_channel = ['cctv1', 'cctv2', 'cctv3', 'cctv4', 'cctv5', 'cctv5plus', 'cctv6','cctv7', 'cctv8', 'cctvjilu', 'cctv10', 'cctv11', 'cctv12','cctv13','cctvchild','cctv15', 'cctv16', 'cctv17', 'cctveurope', 'cctvamerica', 'cctvxiyu', 'cctv4k', 'cctvarabic', 'cctvfrench', 'cctvrussian','shijiedili', 'dianshigouwu', 'taiqiu', 'jingpin', 'shishang', 'hjjc','zhinan', 'diyijuchang', 'fyjc', 'cctvfyzq', 'fyyy','cctvzhengquanzixun','cctvgaowang', 'faxianzhilv','cetv1', 'cetv2', 'xianggangweishi', 'cetv3', 'cetv4', 'cctvdoc', 'cctv9', 'btv1', 'btvjishi', 'dongfang', 'hunan', 'shandong', 'zhejiang', 'jiangsu','guangdong', 'dongnan', 'anhui',  'zhongxueshengpindao', 'faxianzhilv',  'wsjk', 'gansu', 'liaoning', 'cctvlaogushi', 'neimenggu', 'ningxia', 'qinghai', 'xiamen', 'yunnan','chongqing', 'jiangxi', 'shan1xi', 'shan3xi', 'shenzhen', 'sichuan', 'tianjin', 'guangxi', 'guizhou', 'hebei', 'henan', 'heilongjiang', 'hubei', 'jilin','yanbian', 'xizang', 'xinjiang','bingtuan', 'btvchild', 'sdetv', 'shuhua', 'xianfengjilu', 'shuowenjiezi', 'kuailechuidiao', 'zaoqijiaoyu', 'nbtv1', 'nbtv2', 'nbtv3', 'nbtv4', 'wenwubaoku','cctvliyuan', 'wushushijie', 'cctvqimo', 'huanqiuqiguan', 'btv2', 'btv3', 'btv4', 'btv5', 'btv7', 'btv9', 'btvinternational']
 
 def get_epg_data(session, cid, epgdate):
+    """获取EPG数据"""
     try:
         api = f"http://api.cntv.cn/epg/epginfo?c={cid}&d={epgdate}"
         response = session.get(api, timeout=10)
         response.raise_for_status()
         print(f"✅ 成功抓取频道 {cid} 数据")
-        count_success()
         return response.json()
     except Exception as e:
         print(f"❌ 获取 {cid} 数据失败: {str(e)}", file=sys.stderr)
-        return None  # 返回 None 表示失败
+        return None
 
 def getChannelCNTV(fhandle, channelIDs):
+    """获取频道基本信息"""
     session = requests.Session()
     epgdate = datetime.now(tz).strftime('%Y%m%d')
-    for channel in channelIDs:
+
+    print("\n📺 开始获取频道信息...")
+    for i, channel in enumerate(channelIDs, 1):
+        print(f"  处理频道 {i}/{len(channelIDs)}: {channel}", end="\r")
+
         epgdata = get_epg_data(session, channel, epgdate)
-        if epgdata is None:
-             continue  # 跳过当前频道，继续处理下一个
-        if channel in epgdata:
-            fhandle.write(f'  <channel id="{channel}">\n')
-            fhandle.write(f'    <display-name lang="zh">{epgdata[channel]["channelName"]}</display-name>\n')
-            fhandle.write('  </channel>\n')
-            count_success()  # 若需要额外统计频道信息写入成功
+        if epgdata is None or channel not in epgdata:
+            continue
+
+        # 写入频道信息
+        channel_name = epgdata[channel].get("channelName", channel.upper())
+        fhandle.write(f'  <channel id="{channel.upper()}">\n')
+        fhandle.write(f'    <display-name>{channel_name}</display-name>\n')
+        fhandle.write('  </channel>\n')
+
+    print(f"\n✅ 频道信息获取完成，共处理 {len(channelIDs)} 个频道")
 
 def getChannelEPG(fhandle, channelIDs):
+    """获取节目单信息"""
     session = requests.Session()
     today = datetime.now(tz)
-    dates = [today + timedelta(days=i) for i in range(5)]
-    
-    for channel in channelIDs:
-        for date in dates:
+    dates = [today + timedelta(days=i) for i in range(5)]  # 获取5天数据
+
+    print("\n📅 开始获取节目单...")
+    total_channels = len(channelIDs)
+
+    for channel_idx, channel in enumerate(channelIDs, 1):
+        print(f"  处理频道 {channel_idx}/{total_channels}: {channel}")
+
+        for date_idx, date in enumerate(dates, 1):
             epgdate = date.strftime('%Y%m%d')
+            print(f"    日期 {date_idx}/{len(dates)}: {epgdate}", end="\r")
+
             epgdata = get_epg_data(session, channel, epgdate)
-            if epgdata is None:
-                 continue  # 跳过当前频道，继续处理下一个
-            if not epgdata or channel not in epgdata:
+            if epgdata is None or channel not in epgdata:
                 continue
-                
+
             programs = epgdata[channel].get('program', [])
+
+            if programs:
+                print(f"    日期 {date_idx}/{len(dates)}: {epgdate} - 找到 {len(programs)} 个节目")
+
             for detail in programs:
-                # 处理毫秒时间戳
-                st = detail['st'] // 1000 if detail['st'] > 1e12 else detail['st']
-                et = detail['et'] // 1000 if detail['et'] > 1e12 else detail['et']
-                
-                start = datetime.fromtimestamp(st, tz).strftime('%Y%m%d%H%M%S %z')
-                end = datetime.fromtimestamp(et, tz).strftime('%Y%m%d%H%M%S %z')
-                
-                # 处理跨天节目
-                if start > end:
-                    print(f"⚠️ 频道 {channel} 的节目跨天：{detail['t']} | 原始时间戳 start={detail['st']} end={detail['et']}")
-                    # 自动修正为合法时间（结束时间+1秒）
-                    end = (datetime.fromtimestamp(et, tz) + timedelta(seconds=1)).strftime('%Y%m%d%H%M%S %z')
-                    print(f"  已自动修正结束时间为：{end}")
-                
-                fhandle.write(f'  <programme channel="{channel}" start="{start}" stop="{end}">\n')
-                fhandle.write(f'    <title lang="zh">{escape(detail["t"])}</title>\n')
-                fhandle.write('  </programme>\n')
+                try:
+                    # 处理时间戳（API返回的是秒级时间戳）
+                    st = detail['st']
+                    et = detail['et']
 
-# 新增统计功能
-success_count = 0
-def count_success():
-    global success_count
-    success_count += 1
+                    # 转换为XMLTV格式的时间
+                    start_dt = datetime.fromtimestamp(st, tz)
+                    end_dt = datetime.fromtimestamp(et, tz)
 
-with gzip.open('cntvepg.xml.gz', 'wt', encoding='utf-8') as f:
-    f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
-    f.write('<tv generator-info-name="Fixed EPG" generator-info-url="https://github.com/lxxcp">\n')
-    
-    # 执行抓取并统计
-    for func, channels in [(getChannelCNTV, cctv_channel), (getChannelEPG, cctv_channel)]:
-        func(f, channels)
-    
-    f.write('</tv>')
+                    # 格式化为：YYYYMMDDHHMMSS +0800
+                    start_str = start_dt.strftime('%Y%m%d%H%M%S %z')
+                    stop_str = end_dt.strftime('%Y%m%d%H%M%S %z')
 
-# 最终检查：若无任何数据则主动报错
-if success_count == 0:
-    print("⚠️ 未抓取到任何有效数据", file=sys.stderr)
-    sys.exit(1)
-else:
-    print(f"🎉 总计成功写入 {success_count} 个频道数据")
+                    # 处理跨天节目（如果开始时间>结束时间）
+                    if start_str[:8] != stop_str[:8]:  # 日期不同
+                        # 可能是跨天节目，确保时间格式正确
+                        print(f"⚠️  跨天节目: {detail['t']} ({start_str[:8]} → {stop_str[:8]})")
+
+                    # 写入节目信息（严格按照示例格式）
+                    fhandle.write(f'  <programme start="{start_str}" stop="{stop_str}" channel="{channel.upper()}">\n')
+                    fhandle.write(f'    <title>{escape(detail["t"])}</title>\n')
+                    fhandle.write('  </programme>\n')
+
+                except Exception as e:
+                    print(f"    ⚠️ 处理节目失败: {detail.get('t', '未知节目')} - {e}")
+                    continue
+
+    print("\n✅ 节目单获取完成")
+
+def main():
+    """主函数"""
+    print("=" * 60)
+    print("🎬 CNTV EPG 抓取工具 - 精简版")
+    print("=" * 60)
+
+    try:
+        with gzip.open('cntvepg.xml.gz', 'wt', encoding='utf-8') as f:
+            # 写入XML头部
+            f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+            f.write('<tv>\n')
+
+            # 获取频道信息
+            getChannelCNTV(f, cctv_channel)
+
+            # 获取节目信息
+            getChannelEPG(f, cctv_channel)
+
+            # 写入XML尾部
+            f.write('</tv>\n')
+
+        print("\n" + "=" * 60)
+        print("🎉 EPG文件生成成功！")
+        print("📁 文件位置: cntvepg.xml.gz")
+        print("=" * 60)
+
+    except Exception as e:
+        print(f"\n❌ 生成EPG文件失败: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
