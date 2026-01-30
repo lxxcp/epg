@@ -6,12 +6,15 @@ import logging
 from copy import deepcopy
 import datetime
 import pytz
+import re
 from xml.sax.saxutils import escape
+from collections import defaultdict
 
 # 配置参数
 config_file = os.path.join(os.path.dirname(__file__), 'config.txt')
 output_file_gz = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'e.xml.gz')
 TIMEZONE = pytz.timezone('Asia/Shanghai')
+MAX_DAYS_TO_KEEP = 14  # 最多保留多少天的节目数据
 
 def load_config_and_alias(config_file):
     """从合并的配置文件中加载频道名称和别名映射"""
@@ -53,7 +56,7 @@ def map_channel(display_name, config_names, alias_mapping):
     """频道匹配核心逻辑"""
     # 1. 直接匹配config.txt
     if display_name in config_names:
-        logging.info(f"直接匹配成功: {display_name}")
+        logging.debug(f"直接匹配成功: {display_name}")
         return display_name
     
     # 2. 通过映射表匹配
@@ -72,6 +75,8 @@ def map_channel(display_name, config_names, alias_mapping):
 def parse_epg_time(time_str):
     """解析EPG时间并转换为本地时区"""
     try:
+        if not time_str or len(time_str) < 14:
+            return None
         dt = datetime.datetime.strptime(time_str[:14], "%Y%m%d%H%M%S")
         if time_str.endswith('Z'):
             dt = pytz.utc.localize(dt)
@@ -79,22 +84,356 @@ def parse_epg_time(time_str):
             dt = TIMEZONE.localize(dt)
         return dt
     except Exception as e:
-        # 静默处理错误，不打印日志避免刷屏
+        logging.debug(f"时间解析失败: {time_str}, 错误: {e}")
         return None
+
+def normalize_title(title):
+    """标准化标题，但保留集数信息"""
+    if not title:
+        return ""
+    
+    # 提取并保留集数信息
+    episode_info = ""
+    episode_patterns = [
+        r'(第[一二三四五六七八九十零百千万0-9]+[集期部回])',  # 中文集数
+        r'([上下]集)',  # 上下集
+        r'(第?\d+[集期部回])',  # 数字集数
+        r'(\(第?\d+集\))',  # 括号内的集数
+        r'(【第?\d+集】)',  # 方括号内的集数
+    ]
+    
+    normalized = title.strip()
+    
+    # 先提取集数信息
+    for pattern in episode_patterns:
+        match = re.search(pattern, normalized)
+        if match:
+            episode_info = match.group(1)
+            break
+    
+    # 移除常见的年份和编号模式，但保留集数
+    patterns_to_remove = [
+        r'\s*\d{4}[-_]\d+$',           # 如 "活力·源2025-226", "味道-2025-31"
+        r'[-_]\d{4}[-_]\d+$',          # 如 "特别呈现2024-352"
+        r'[-_]\d+$',                   # 如 "精彩多看点-5"
+        r'\s*\d+$',                    # 如 "世界地理50"
+        r'[-_]\d{4}年',                # 年份
+        r'字幕板[-_]\d{4}[-_]\d+$',    # 如 "世界地理频道字幕板-2023-2"
+        r'-\d{4}-\d+$',                # 如 "-2025-31"
+    ]
+    
+    for pattern in patterns_to_remove:
+        normalized = re.sub(pattern, '', normalized)
+    
+    # 如果提取到了集数信息，加回到标题中
+    if episode_info:
+        # 确保集数信息在标题末尾
+        normalized = re.sub(episode_patterns[0], '', normalized)  # 先移除可能已经存在的集数
+        normalized = normalized.strip()
+        # 在集数前加空格（如果还没有的话）
+        if normalized and not normalized.endswith(' '):
+            normalized += ' '
+        normalized += episode_info
+    
+    # 清理多余空格
+    normalized = re.sub(r'\s+', ' ', normalized).strip()
+    
+    return normalized if normalized else title.strip()
+
+def normalize_time(time_str, interval_minutes=5):
+    """时间归一化：将时间对齐到指定的分钟间隔"""
+    if not time_str or len(time_str) < 14:
+        return time_str
+    
+    try:
+        dt = datetime.datetime.strptime(time_str[:14], "%Y%m%d%H%M%S")
+        # 对齐到指定的分钟间隔
+        minute = dt.minute
+        aligned_minute = (minute // interval_minutes) * interval_minutes
+        dt = dt.replace(minute=aligned_minute, second=0)
+        
+        # 保持原始时区信息
+        timezone_part = time_str[14:] if len(time_str) > 14 else " +0800"
+        return dt.strftime("%Y%m%d%H%M%S") + timezone_part
+    except Exception as e:
+        logging.debug(f"时间归一化失败: {time_str}, 错误: {e}")
+        return time_str
+
+def extract_episode_info(title):
+    """提取标题中的集数信息"""
+    if not title:
+        return None, title
+    
+    # 集数匹配模式
+    episode_patterns = [
+        (r'第([一二三四五六七八九十零百千万0-9]+)[集期部回]', 'chinese'),
+        (r'([上下])集', 'chinese_simple'),
+        (r'第?(\d+)[集期部回]', 'numeric'),
+        (r'\(第?(\d+)集\)', 'parentheses'),
+        (r'【第?(\d+)集】', 'brackets'),
+        (r'[-_](\d+)[集期]$', 'suffix'),
+    ]
+    
+    for pattern, pattern_type in episode_patterns:
+        match = re.search(pattern, title)
+        if match:
+            episode_num = match.group(1)
+            # 如果是中文数字，转换为阿拉伯数字
+            if pattern_type == 'chinese':
+                try:
+                    from cn2an import cn2an
+                    episode_num = str(cn2an.cn2an(episode_num))
+                except:
+                    pass  # 如果转换失败，保持原样
+            
+            # 获取基本标题（移除集数信息）
+            base_title = re.sub(pattern, '', title).strip()
+            return episode_num, base_title
+    
+    return None, title
+
+def get_program_quality(program):
+    """评估节目质量，返回分数"""
+    score = 0
+    
+    # 检查是否有描述
+    desc_elem = program.find('desc')
+    if desc_elem is not None and desc_elem.text and desc_elem.text.strip():
+        desc_text = desc_elem.text.strip()
+        # 长描述得分更高
+        if len(desc_text) > 20:
+            score += 3
+        else:
+            score += 2
+    
+    # 检查是否有语言属性
+    title_elem = program.find('title')
+    if title_elem is not None:
+        lang_attr = title_elem.get('lang', '')
+        if lang_attr:
+            score += 1
+        
+        # 检查标题是否详细
+        title_text = title_elem.text or ""
+        # 有年份/编号信息加分
+        if re.search(r'\d{4}[-_]\d+', title_text):
+            score += 1
+        # 有集数信息加分
+        if extract_episode_info(title_text)[0]:
+            score += 1
+    
+    # 检查其他信息
+    if program.find('category') is not None:
+        score += 1
+    if program.find('sub-title') is not None:
+        score += 1
+    if program.find('episode-num') is not None:
+        score += 1
+    
+    return score
+
+def programs_overlap(prog1, prog2, threshold_minutes=5):
+    """检查两个节目是否时间重叠"""
+    def get_datetime(time_str):
+        parsed = parse_epg_time(time_str)
+        return parsed if parsed else None
+    
+    start1 = get_datetime(prog1.get('start', ''))
+    stop1 = get_datetime(prog1.get('stop', ''))
+    start2 = get_datetime(prog2.get('start', ''))
+    stop2 = get_datetime(prog2.get('stop', ''))
+    
+    if not all([start1, stop1, start2, stop2]):
+        return False
+    
+    # 计算重叠时间（分钟）
+    overlap_start = max(start1, start2)
+    overlap_end = min(stop1, stop2)
+    
+    if overlap_start < overlap_end:
+        overlap_minutes = (overlap_end - overlap_start).total_seconds() / 60
+        return overlap_minutes >= threshold_minutes
+    
+    return False
+
+def process_programme(programme, mapped_id):
+    """处理单个节目节点"""
+    new_prog = deepcopy(programme)
+    
+    # 获取原始开始时间
+    start_time_str = programme.get('start', '')
+    start_time = parse_epg_time(start_time_str)
+    
+    if not start_time:
+        return None
+    
+    # 清理并设置语言属性
+    for elem in new_prog.findall('title'):
+        if not elem.get('lang'):
+            elem.set('lang', 'zh')
+        if elem.text:
+            elem.text = escape(elem.text.strip())
+    
+    for elem in new_prog.findall('desc'):
+        if not elem.get('lang'):
+            elem.set('lang', 'zh')
+        if elem.text:
+            elem.text = escape(elem.text.strip())
+    
+    # 设置频道
+    new_prog.set('channel', mapped_id)
+    
+    # 处理时间信息
+    if start_time_str:
+        # 保持原始时间格式，只更新时区部分
+        if ' +' not in start_time_str and ' -' not in start_time_str and not start_time_str.endswith('Z'):
+            new_prog.set('start', start_time_str[:14] + " +0800")
+    
+    # 处理结束时间
+    stop_attr = programme.get('stop')
+    if stop_attr:
+        stop_time = parse_epg_time(stop_attr)
+        if stop_time and stop_time > start_time:
+            if ' +' not in stop_attr and ' -' not in stop_attr and not stop_attr.endswith('Z'):
+                new_prog.set('stop', stop_attr[:14] + " +0800")
+    
+    return new_prog
+
+def deduplicate_programs(programs_list):
+    """去重节目列表，应用完整的去重策略"""
+    if not programs_list:
+        return []
+    
+    # 第一步：按时间归一化分组
+    time_groups = defaultdict(list)
+    for prog in programs_list:
+        # 获取归一化时间键（对齐到5分钟）
+        start_time = prog.get('start', '')
+        normalized_start = normalize_time(start_time, 5)
+        
+        if not normalized_start:
+            continue
+        
+        # 获取归一化标题（保留集数信息）
+        title_elem = prog.find('title')
+        title_text = title_elem.text if title_elem is not None else ''
+        normalized_title = normalize_title(title_text)
+        
+        # 创建分组键（频道 + 时间 + 标题）
+        channel_id = prog.get('channel', '')
+        time_key = normalized_start[:12]  # 精确到分钟
+        group_key = f"{channel_id}|{time_key}|{normalized_title}"
+        
+        time_groups[group_key].append(prog)
+    
+    # 第二步：在每个分组中选择质量最高的节目
+    selected_programs = []
+    for group_key, group_programs in time_groups.items():
+        if len(group_programs) == 1:
+            selected_programs.append(group_programs[0])
+        else:
+            # 按质量评分排序
+            scored_programs = []
+            for prog in group_programs:
+                score = get_program_quality(prog)
+                scored_programs.append((score, prog))
+            
+            # 按分数降序排序
+            scored_programs.sort(key=lambda x: x[0], reverse=True)
+            
+            # 选择分数最高的节目
+            selected_programs.append(scored_programs[0][1])
+            
+            # 记录去重信息
+            if len(group_programs) > 1:
+                logging.debug(f"去重: {group_key} - 从 {len(group_programs)} 个节目中选择了最佳")
+    
+    # 第三步：处理时间重叠的节目
+    final_programs = []
+    # 按开始时间排序
+    selected_programs.sort(key=lambda p: p.get('start', ''))
+    
+    for prog in selected_programs:
+        # 检查是否与已选择的节目重叠
+        overlap_found = False
+        for existing_prog in final_programs:
+            if programs_overlap(prog, existing_prog, 3):  # 3分钟重叠阈值
+                # 有重叠，比较质量
+                prog_score = get_program_quality(prog)
+                existing_score = get_program_quality(existing_prog)
+                
+                if prog_score > existing_score:
+                    # 用质量更高的替换
+                    final_programs.remove(existing_prog)
+                    final_programs.append(prog)
+                    logging.debug(f"重叠替换: 新节目得分 {prog_score} > 旧节目得分 {existing_score}")
+                # 如果质量相同或更低，跳过当前节目
+                overlap_found = True
+                break
+        
+        if not overlap_found:
+            final_programs.append(prog)
+    
+    # 第四步：确保时间连续性
+    final_programs.sort(key=lambda p: p.get('start', ''))
+    for i in range(len(final_programs) - 1):
+        current = final_programs[i]
+        next_prog = final_programs[i + 1]
+        
+        current_stop_str = current.get('stop', '')
+        next_start_str = next_prog.get('start', '')
+        
+        current_stop = parse_epg_time(current_stop_str)
+        next_start = parse_epg_time(next_start_str)
+        
+        if current_stop and next_start and current_stop > next_start:
+            # 调整当前节目的结束时间为下一个节目的开始时间
+            adjusted_stop = next_start - datetime.timedelta(seconds=1)
+            current.set('stop', adjusted_stop.strftime("%Y%m%d%H%M%S +0800"))
+            logging.debug(f"时间调整: 调整节目结束时间避免重叠")
+    
+    return final_programs
+
+def filter_old_programs(programs_by_channel, max_days=MAX_DAYS_TO_KEEP):
+    """过滤掉太旧的节目"""
+    now = datetime.datetime.now(TIMEZONE)
+    cutoff_date = now - datetime.timedelta(days=max_days)
+    
+    filtered_programs = {}
+    total_before = 0
+    total_after = 0
+    
+    for channel_id, programs in programs_by_channel.items():
+        filtered = []
+        for prog in programs:
+            start_time_str = prog.get('start', '')
+            start_time = parse_epg_time(start_time_str)
+            
+            if start_time and start_time >= cutoff_date:
+                filtered.append(prog)
+        
+        filtered_programs[channel_id] = filtered
+        total_before += len(programs)
+        total_after += len(filtered)
+        
+        if len(programs) != len(filtered):
+            logging.info(f"频道 {channel_id}: 过滤掉 {len(programs) - len(filtered)} 个过旧节目")
+    
+    logging.info(f"节目时间过滤: 从 {total_before} 个过滤到 {total_after} 个 (保留最近 {max_days} 天)")
+    return filtered_programs
 
 def process_sources(urls, alias_mapping, config_names):
     channels = {}  # 频道ID: 频道节点
-    programmes = {}  # 频道ID: [节目列表]
+    programmes = defaultdict(list)  # 频道ID: [节目列表]
     
-    now = datetime.datetime.now(TIMEZONE)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    logging.info(f"当前时间: {now}, 今日开始时间: {today_start}")
+    # 不再限制只抓取今天的节目
+    logging.info("开始抓取EPG数据（不限制日期）")
 
-    for url in urls:
+    for url_index, url in enumerate(urls):
         try:
             # 获取并解析EPG数据
-            logging.info(f"Processing: {url}")
-            response = requests.get(url, timeout=15)
+            logging.info(f"Processing [{url_index+1}/{len(urls)}]: {url}")
+            response = requests.get(url, timeout=20)
             response.raise_for_status()
             
             # 判断是否是gzip格式
@@ -110,13 +449,14 @@ def process_sources(urls, alias_mapping, config_names):
                 
             # 尝试不同编码解析XML
             root = None
-            encodings_to_try = ['utf-8', 'gb2312', 'gbk', 'latin-1']
+            encodings_to_try = ['utf-8', 'gb2312', 'gbk', 'latin-1', 'iso-8859-1']
             
             for encoding in encodings_to_try:
                 try:
-                    root = ET.fromstring(content.decode(encoding))
+                    root = ET.fromstring(content.decode(encoding, errors='ignore'))
+                    logging.debug(f"使用编码 {encoding} 成功解析: {url}")
                     break
-                except (UnicodeDecodeError, ET.ParseError):
+                except (UnicodeDecodeError, ET.ParseError) as e:
                     continue
             
             if root is None:
@@ -150,70 +490,77 @@ def process_sources(urls, alias_mapping, config_names):
                             new_channel.remove(dn)
                         ET.SubElement(new_channel, 'display-name', {'lang': 'zh'}).text = mapped_id
                         channels[mapped_id] = new_channel
-                        logging.info(f"添加频道: {mapped_id} (原名称: {display_name})")
+                        logging.debug(f"添加频道: {mapped_id} (原名称: {display_name})")
             
             # 处理节目信息
-            prog_count = 0  # 添加计数器
+            prog_count = 0
             for programme in root.findall('programme'):
                 original_id = programme.get('channel')
                 mapped_id = channel_map.get(original_id)
                 if not mapped_id:
                     continue
                 
-                # 时间过滤
-                start_time = parse_epg_time(programme.get('start'))
-                if not start_time or start_time < today_start:
-                    continue
-                
-                # 克隆并更新节目信息
-                new_prog = deepcopy(programme)
-                for elem in new_prog.iter():
-                    if elem.text:
-                        elem.text = escape(elem.text)
-                    if elem.tail:
-                        elem.tail = escape(elem.tail)
-                new_prog.set('channel', mapped_id)
-                new_prog.set('start', start_time.strftime("%Y%m%d%H%M%S +0800"))
-                if programme.get('stop'):
-                    stop_time = parse_epg_time(programme.get('stop'))
-                    if stop_time:
-                        new_prog.set('stop', stop_time.strftime("%Y%m%d%H%M%S +0800"))
-                
-                programmes.setdefault(mapped_id, []).append(new_prog)
-                prog_count += 1
+                # 不再进行时间过滤，处理所有节目
+                processed_prog = process_programme(programme, mapped_id)
+                if processed_prog:
+                    programmes[mapped_id].append(processed_prog)
+                    prog_count += 1
                 
             logging.info(f"Processed: {len(channel_map)} channels, {prog_count} programmes from {url}")
             
+        except requests.exceptions.Timeout:
+            logging.warning(f"请求超时: {url}")
+        except requests.exceptions.RequestException as e:
+            logging.error(f"网络请求失败 {url}: {e}")
         except Exception as e:
-            logging.error(f"Failed to process {url}: {e}")
-
+            logging.error(f"处理失败 {url}: {e}")
+    
+    # 过滤掉太旧的节目（可选，避免文件过大）
+    programmes = filter_old_programs(programs, MAX_DAYS_TO_KEEP)
+    
     # 生成最终XML
     root = ET.Element('tv')
     # 添加频道
     for channel in channels.values():
         root.append(deepcopy(channel))
-    # 添加节目（带去重）
+    
+    # 添加节目（应用完整的去重策略）
     total_progs = 0
     for channel_id, progs in programmes.items():
-        seen = set()
-        unique_progs = []
-        for p in progs:
-            key = f"{p.get('start')}|{p.find('title').text if p.find('title') else ''}"
-            if key not in seen:
-                seen.add(key)
-                unique_progs.append(p)
+        if not progs:
+            continue
+            
+        # 应用去重策略
+        unique_progs = deduplicate_programs(progs)
         total_progs += len(unique_progs)
         root.extend(unique_progs)
+        
+        logging.info(f"频道 {channel_id}: 原始节目 {len(progs)} 个, 去重后 {len(unique_progs)} 个")
+        
+        # 记录最早的节目时间
+        if unique_progs:
+            sorted_progs = sorted(unique_progs, key=lambda p: p.get('start', ''))
+            first_start = parse_epg_time(sorted_progs[0].get('start', ''))
+            last_start = parse_epg_time(sorted_progs[-1].get('start', ''))
+            if first_start and last_start:
+                days_covered = (last_start - first_start).days + 1
+                logging.info(f"频道 {channel_id} 节目覆盖: {first_start.date()} 到 {last_start.date()} ({days_covered} 天)")
     
     # 保存压缩文件
     xml_str = ET.tostring(root, encoding='utf-8')
     try:
         with gzip.open(output_file_gz, 'wb') as f:
             f.write(b'<?xml version="1.0" encoding="utf-8"?>\n')
+            f.write(b'<!DOCTYPE tv SYSTEM "xmltv.dtd">\n')
             f.write(xml_str)
-        logging.info(f"EPG generated: {len(channels)} channels, {total_progs} programmes")
+        logging.info(f"EPG生成完成: {len(channels)} 个频道, {total_progs} 个节目")
+        
+        # 显示文件大小
+        file_size = os.path.getsize(output_file_gz)
+        logging.info(f"输出文件大小: {file_size / 1024 / 1024:.2f} MB")
+        
     except Exception as e:
-        logging.error(f"Failed to save EPG: {e}")
+        logging.error(f"保存EPG文件失败: {e}")
 
 if __name__ == "__main__":
     logging.basicConfig(
@@ -227,13 +574,11 @@ if __name__ == "__main__":
     
     # 数据源列表
     epg_urls = [
-        'https://raw.githubusercontent.com/lxxcp/epg/main/cntvepg.xml.gz',
-        'https://raw.githubusercontent.com/lxxcp/epg/main/tvmao.xml.gz',
         'https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz',
         'https://raw.githubusercontent.com/Li-Xingyu/ZJ_IPTV_EPG/main/epg.xml',
         'https://raw.githubusercontent.com/zzq1234567890/epg/main/swepg.xml.gz',
-	'https://gitee.com/taksssss/tv/raw/main/epg/51zmte1.xml.gz',
-	'https://gitee.com/taksssss/tv/raw/main/epg/51zmte2.xml.gz',
+        'https://gitee.com/taksssss/tv/raw/main/epg/51zmte1.xml.gz',
+        'https://gitee.com/taksssss/tv/raw/main/epg/51zmte2.xml.gz',
         'https://epg.zsdc.eu.org/t.xml',
         'http://liliu.serv00.net/epg/all.xml.gz',
         'https://gitee.com/taksssss/tv/raw/main/epg/erw.xml.gz',
@@ -249,14 +594,14 @@ if __name__ == "__main__":
         'https://raw.githubusercontent.com/zsz520/epg/main/fjyd.xml.gz',
         'https://raw.githubusercontent.com/zsz520/epg/main/migu.xml.gz',
         'http://139.199.229.98:8989/EPG',
- 	'https://raw.githubusercontent.com/zzq12345/epgtest/main/epganywhere.xml',
- 	'https://raw.githubusercontent.com/zzq12345/epgtest/main/epghebeiiptv1.xml',
- 	'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgguangdong.xml.gz',
-	'https://raw.githubusercontent.com/zzq12345/epgtest/main/epghebeiiptv1.xml',
-	'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgnewguangdong.xml',
- 	'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgnewshanghai.xml',
- 	'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgyidong.xml.xml',
- 	'https://epg.136605.xyz/9days.xml',
+        'https://raw.githubusercontent.com/zzq12345/epgtest/main/epganywhere.xml',
+        'https://raw.githubusercontent.com/zzq12345/epgtest/main/epghebeiiptv1.xml',
+        'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgguangdong.xml.gz',
+        'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgnewguangdong.xml',
+        'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgnewshanghai.xml',
+        'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgyidong.xml.xml',
+        'https://epg.136605.xyz/9days.xml',
+        'https://raw.githubusercontent.com/lxxcp/epg/main/tvmao.xml.gz',
         'https://raw.githubusercontent.com/peterHchina/iptv/main/EPG.xml',
     ]
     
