@@ -42,6 +42,7 @@ def load_config_and_alias(config_file):
                 # 如果有别名，添加到映射表
                 if len(parts) > 1:
                     for alias in parts[1:]:
+                        # 确保别名不会映射到其他别名，只映射到标准名称
                         alias_mapping[alias] = standard_name
         
         logging.info(f"Loaded {len(config_names)} channels and {len(alias_mapping)} alias mappings from {config_file}")
@@ -52,15 +53,16 @@ def load_config_and_alias(config_file):
         return set(), {}
 
 def map_channel(display_name, config_names, alias_mapping):
-    """频道匹配核心逻辑"""
-    # 1. 直接匹配config.txt
+    """频道匹配核心逻辑 - 恢复原来的逻辑"""
+    # 1. 直接匹配config.txt中的标准名称
     if display_name in config_names:
         logging.debug(f"直接匹配成功: {display_name}")
         return display_name
     
-    # 2. 通过映射表匹配
+    # 2. 通过映射表匹配别名
     mapped_name = alias_mapping.get(display_name)
     if mapped_name:
+        # 确保映射目标在config.txt中
         if mapped_name in config_names:
             logging.info(f"别名映射成功: {display_name} -> {mapped_name}")
             return mapped_name
@@ -456,6 +458,52 @@ def filter_programs_by_date(programs_by_channel):
     
     return filtered_programs
 
+def try_parse_xml(content, url):
+    """尝试多种方式解析XML，包含错误恢复"""
+    # 首先尝试直接解析
+    try:
+        root = ET.fromstring(content)
+        logging.debug(f"直接解析成功: {url}")
+        return root
+    except ET.ParseError as e:
+        logging.warning(f"直接解析失败 {url}: {e}")
+    
+    # 尝试不同编码
+    encodings_to_try = ['utf-8', 'gb2312', 'gbk', 'latin-1', 'iso-8859-1', 'utf-16']
+    
+    for encoding in encodings_to_try:
+        try:
+            root = ET.fromstring(content.decode(encoding, errors='ignore'))
+            logging.debug(f"使用编码 {encoding} 成功解析: {url}")
+            return root
+        except (UnicodeDecodeError, ET.ParseError):
+            continue
+    
+    # 尝试修复常见的XML格式问题
+    try:
+        # 修复无效的XML字符
+        if isinstance(content, bytes):
+            content_str = content.decode('utf-8', errors='ignore')
+        else:
+            content_str = content
+        
+        # 移除控制字符（除了制表符、换行符、回车符）
+        content_str = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', content_str)
+        
+        # 修复未转义的&符号
+        content_str = re.sub(r'&(?!(amp|lt|gt|quot|apos);)', '&amp;', content_str)
+        
+        # 修复未关闭的标签
+        content_str = content_str.replace('<programme', '\n<programme')
+        content_str = content_str.replace('</programme>', '</programme>\n')
+        
+        root = ET.fromstring(content_str)
+        logging.debug(f"修复后解析成功: {url}")
+        return root
+    except ET.ParseError as e:
+        logging.error(f"所有解析方式都失败 {url}: {e}")
+        return None
+
 def process_sources(urls, alias_mapping, config_names):
     channels = {}  # 频道ID: 频道节点
     programmes = defaultdict(list)  # 频道ID: [节目列表]
@@ -479,26 +527,12 @@ def process_sources(urls, alias_mapping, config_names):
                 # 如果不是gzip，直接使用原始内容
                 content = response.content
                 logging.debug(f"处理普通XML内容: {url}")
-                
-            # 尝试不同编码解析XML
-            root = None
-            encodings_to_try = ['utf-8', 'gb2312', 'gbk', 'latin-1', 'iso-8859-1']
             
-            for encoding in encodings_to_try:
-                try:
-                    root = ET.fromstring(content.decode(encoding, errors='ignore'))
-                    logging.debug(f"使用编码 {encoding} 成功解析: {url}")
-                    break
-                except (UnicodeDecodeError, ET.ParseError) as e:
-                    continue
-            
+            # 尝试解析XML
+            root = try_parse_xml(content, url)
             if root is None:
-                # 如果所有编码都失败，尝试直接解析
-                try:
-                    root = ET.fromstring(content)
-                except ET.ParseError as e:
-                    logging.error(f"无法解析XML内容 {url}: {e}")
-                    continue
+                logging.warning(f"跳过无法解析的源: {url}")
+                continue
             
             # 构建频道映射表
             channel_map = {}
@@ -512,7 +546,23 @@ def process_sources(urls, alias_mapping, config_names):
                      logging.debug(f"频道 {channel_id} 缺少display-name")
                      continue
                 display_name = display_name_elem.text.strip()
-                mapped_id = map_channel(display_name, config_names, alias_mapping)
+                
+                # 核心逻辑：先尝试直接匹配标准名称，不行再尝试别名映射
+                mapped_id = None
+                
+                # 1. 直接匹配config.txt中的标准名称
+                if display_name in config_names:
+                    mapped_id = display_name
+                    logging.debug(f"直接匹配: {display_name}")
+                else:
+                    # 2. 尝试别名映射
+                    mapped_id = alias_mapping.get(display_name)
+                    if mapped_id and mapped_id in config_names:
+                        logging.info(f"别名映射: {display_name} -> {mapped_id}")
+                    else:
+                        mapped_id = None
+                        logging.debug(f"频道未匹配: {display_name}")
+                
                 if mapped_id:
                     channel_map[channel_id] = mapped_id
                     if mapped_id not in channels:
@@ -547,6 +597,8 @@ def process_sources(urls, alias_mapping, config_names):
             logging.error(f"网络请求失败 {url}: {e}")
         except Exception as e:
             logging.error(f"处理失败 {url}: {e}")
+            logging.error(f"URL: {url}")
+            logging.error(f"错误详情: {str(e)}")
     
     # 按日期过滤节目：保留昨天、今天和未来节目
     programmes = filter_programs_by_date(programmes)
@@ -598,7 +650,7 @@ if __name__ == "__main__":
     
     # 数据源列表
     epg_urls = [
-         'https://raw.githubusercontent.com/lxxcp/epg/main/tvmao.xml.gz',
+ 	'https://raw.githubusercontent.com/lxxcp/epg/main/tvmao.xml.gz',
         'https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz',
         'https://raw.githubusercontent.com/Li-Xingyu/ZJ_IPTV_EPG/main/epg.xml',
         'https://raw.githubusercontent.com/zzq1234567890/epg/main/swepg.xml.gz',
