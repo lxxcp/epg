@@ -198,13 +198,15 @@ def get_program_quality(program):
     
     # 检查是否有描述
     desc_elem = program.find('desc')
-    if desc_elem is not None and desc_elem.text and desc_elem.text.strip():
-        desc_text = desc_elem.text.strip()
-        # 长描述得分更高
-        if len(desc_text) > 20:
-            score += 3
-        else:
-            score += 2
+    if desc_elem is not None:
+        desc_text = desc_elem.text
+        if desc_text is not None and desc_text.strip():
+            desc_text = desc_text.strip()
+            # 长描述得分更高
+            if len(desc_text) > 20:
+                score += 3
+            else:
+                score += 2
     
     # 检查是否有语言属性
     title_elem = program.find('title')
@@ -214,7 +216,7 @@ def get_program_quality(program):
             score += 1
         
         # 检查标题是否详细
-        title_text = title_elem.text or ""
+        title_text = title_elem.text if title_elem.text is not None else ""
         # 有年份/编号信息加分
         if re.search(r'\d{4}[-_]\d+', title_text):
             score += 1
@@ -271,13 +273,13 @@ def process_programme(programme, mapped_id):
     for elem in new_prog.findall('title'):
         if not elem.get('lang'):
             elem.set('lang', 'zh')
-        if elem.text:
+        if elem.text is not None:
             elem.text = escape(elem.text.strip())
     
     for elem in new_prog.findall('desc'):
         if not elem.get('lang'):
             elem.set('lang', 'zh')
-        if elem.text:
+        if elem.text is not None:
             elem.text = escape(elem.text.strip())
     
     # 设置频道
@@ -316,7 +318,7 @@ def deduplicate_programs(programs_list):
         
         # 获取归一化标题（保留集数信息）
         title_elem = prog.find('title')
-        title_text = title_elem.text if title_elem is not None else ''
+        title_text = title_elem.text if title_elem is not None and title_elem.text is not None else ''
         normalized_title = normalize_title(title_text)
         
         # 创建分组键（频道 + 时间 + 标题）
@@ -502,7 +504,7 @@ def process_sources(urls, alias_mapping, config_names):
                 
                 # 不再进行时间过滤，处理所有节目
                 processed_prog = process_programme(programme, mapped_id)
-                if processed_prog:
+                if processed_prog is not None:
                     programmes[mapped_id].append(processed_prog)
                     prog_count += 1
                 
@@ -516,7 +518,7 @@ def process_sources(urls, alias_mapping, config_names):
             logging.error(f"处理失败 {url}: {e}")
     
     # 过滤掉太旧的节目（可选，避免文件过大）
-    programmes = filter_old_programs(programs, MAX_DAYS_TO_KEEP)
+    programmes = filter_old_programs(programmes, MAX_DAYS_TO_KEEP)
     
     # 生成最终XML
     root = ET.Element('tv')
@@ -542,7 +544,7 @@ def process_sources(urls, alias_mapping, config_names):
             sorted_progs = sorted(unique_progs, key=lambda p: p.get('start', ''))
             first_start = parse_epg_time(sorted_progs[0].get('start', ''))
             last_start = parse_epg_time(sorted_progs[-1].get('start', ''))
-            if first_start and last_start:
+            if first_start is not None and last_start is not None:
                 days_covered = (last_start - first_start).days + 1
                 logging.info(f"频道 {channel_id} 节目覆盖: {first_start.date()} 到 {last_start.date()} ({days_covered} 天)")
     
@@ -566,7 +568,7 @@ if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        datefmt='%Y-%m-d %H:%M:%S'
     )
     
     # 初始化配置（从合并的文件中加载）
@@ -574,6 +576,7 @@ if __name__ == "__main__":
     
     # 数据源列表
     epg_urls = [
+        'https://raw.githubusercontent.com/lxxcp/epg/main/tvmao.xml.gz',
         'https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz',
         'https://raw.githubusercontent.com/Li-Xingyu/ZJ_IPTV_EPG/main/epg.xml',
         'https://raw.githubusercontent.com/zzq1234567890/epg/main/swepg.xml.gz',
@@ -601,7 +604,6 @@ if __name__ == "__main__":
         'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgnewshanghai.xml',
         'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgyidong.xml.xml',
         'https://epg.136605.xyz/9days.xml',
-        'https://raw.githubusercontent.com/lxxcp/epg/main/tvmao.xml.gz',
         'https://raw.githubusercontent.com/peterHchina/iptv/main/EPG.xml',
     ]
     
