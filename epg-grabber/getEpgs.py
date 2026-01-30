@@ -17,8 +17,8 @@ TIMEZONE = pytz.timezone('Asia/Shanghai')
 
 def load_config_and_alias(config_file):
     """从合并的配置文件中加载频道名称和别名映射"""
-    config_names = set()
-    alias_mapping = {}
+    config_names = set()  # 我们要抓取的所有频道（config.txt第一列）
+    alias_mapping = {}    # EPG源中的名称 -> 我们的标准名称
     
     try:
         with open(config_file, 'r', encoding='utf-8') as file:
@@ -33,44 +33,45 @@ def load_config_and_alias(config_file):
                 if len(parts) == 0:
                     continue
                 
-                # 第一个总是标准名称
+                # 第一个是我们要抓取的标准名称
                 standard_name = parts[0]
                 
                 # 添加到配置名称集合
                 config_names.add(standard_name)
                 
                 # 如果有别名，添加到映射表
+                # 每个别名都映射到这个标准名称
                 if len(parts) > 1:
                     for alias in parts[1:]:
-                        # 确保别名不会映射到其他别名，只映射到标准名称
                         alias_mapping[alias] = standard_name
         
-        logging.info(f"Loaded {len(config_names)} channels and {len(alias_mapping)} alias mappings from {config_file}")
+        logging.info(f"Loaded {len(config_names)} channels to grab and {len(alias_mapping)} alias mappings from {config_file}")
         return config_names, alias_mapping
         
     except Exception as e:
         logging.error(f"Failed to load config: {e}")
         return set(), {}
 
-def map_channel(display_name, config_names, alias_mapping):
-    """频道匹配核心逻辑 - 恢复原来的逻辑"""
+def find_matching_channel(epg_channel_name, config_names, alias_mapping):
+    """为EPG源中的频道名称找到匹配的config.txt频道"""
     # 1. 直接匹配config.txt中的标准名称
-    if display_name in config_names:
-        logging.debug(f"直接匹配成功: {display_name}")
-        return display_name
+    if epg_channel_name in config_names:
+        logging.debug(f"直接匹配: EPG频道 '{epg_channel_name}' -> 标准名称 '{epg_channel_name}'")
+        return epg_channel_name
     
-    # 2. 通过映射表匹配别名
-    mapped_name = alias_mapping.get(display_name)
+    # 2. 通过别名映射表匹配
+    mapped_name = alias_mapping.get(epg_channel_name)
     if mapped_name:
-        # 确保映射目标在config.txt中
+        # 确保映射的目标在我们的config_names中
         if mapped_name in config_names:
-            logging.info(f"别名映射成功: {display_name} -> {mapped_name}")
+            logging.info(f"别名映射: EPG频道 '{epg_channel_name}' -> 标准名称 '{mapped_name}'")
             return mapped_name
         else:
-            logging.warning(f"映射目标不在配置中: {mapped_name} (来自 {display_name})")
-    else:
-        logging.debug(f"未找到映射: {display_name}")
+            logging.warning(f"映射目标无效: '{epg_channel_name}' -> '{mapped_name}' (目标不在config.txt中)")
+            return None
     
+    # 3. 没有匹配到
+    logging.debug(f"无匹配: EPG频道 '{epg_channel_name}' 未在config.txt或别名中找到")
     return None
 
 def parse_epg_time(time_str):
@@ -443,19 +444,6 @@ def filter_programs_by_date(programs_by_channel):
     logging.info(f"节目时间过滤: 从 {total_before} 个过滤到 {total_after} 个")
     logging.info(f"节目分布 - 昨天: {yesterday_count} 个, 今天: {today_count} 个, 未来: {future_count} 个")
     
-    # 计算节目覆盖的时间范围
-    all_filtered_programs = []
-    for progs in filtered_programs.values():
-        all_filtered_programs.extend(progs)
-    
-    if all_filtered_programs:
-        sorted_progs = sorted(all_filtered_programs, key=lambda p: p.get('start', ''))
-        first_start = parse_epg_time(sorted_progs[0].get('start', ''))
-        last_start = parse_epg_time(sorted_progs[-1].get('start', ''))
-        if first_start is not None and last_start is not None:
-            days_covered = (last_start.date() - first_start.date()).days + 1
-            logging.info(f"节目覆盖时间范围: {first_start.date()} 到 {last_start.date()} ({days_covered} 天)")
-    
     return filtered_programs
 
 def try_parse_xml(content, url):
@@ -505,10 +493,11 @@ def try_parse_xml(content, url):
         return None
 
 def process_sources(urls, alias_mapping, config_names):
-    channels = {}  # 频道ID: 频道节点
-    programmes = defaultdict(list)  # 频道ID: [节目列表]
+    channels = {}  # 频道ID: 频道节点（标准名称 -> 频道节点）
+    programmes = defaultdict(list)  # 标准名称 -> [节目列表]
     
-    logging.info("开始抓取EPG数据（保留昨天、今天和未来节目）")
+    logging.info(f"开始抓取EPG数据: 目标频道 {len(config_names)} 个")
+    logging.info(f"目标频道列表: {sorted(config_names)}")
 
     for url_index, url in enumerate(urls):
         try:
@@ -534,62 +523,60 @@ def process_sources(urls, alias_mapping, config_names):
                 logging.warning(f"跳过无法解析的源: {url}")
                 continue
             
-            # 构建频道映射表
-            channel_map = {}
+            # 处理频道信息
+            channel_map = {}  # EPG源中的频道ID -> 我们的标准名称
+            epg_channels_processed = 0
+            epg_channels_matched = 0
+            
             for channel in root.findall('channel'):
+                epg_channels_processed += 1
                 channel_id = channel.get('id')
-                # 获取display-name元素
+                
+                # 获取EPG源中的频道显示名称
                 display_name_elem = channel.find('display-name[@lang="zh"]')
                 if display_name_elem is None:
-                     display_name_elem = channel.find('display-name')
+                    display_name_elem = channel.find('display-name')
+                
                 if display_name_elem is None or display_name_elem.text is None:
-                     logging.debug(f"频道 {channel_id} 缺少display-name")
-                     continue
-                display_name = display_name_elem.text.strip()
+                    logging.debug(f"EPG频道 {channel_id} 缺少display-name")
+                    continue
                 
-                # 核心逻辑：先尝试直接匹配标准名称，不行再尝试别名映射
-                mapped_id = None
+                epg_display_name = display_name_elem.text.strip()
                 
-                # 1. 直接匹配config.txt中的标准名称
-                if display_name in config_names:
-                    mapped_id = display_name
-                    logging.debug(f"直接匹配: {display_name}")
-                else:
-                    # 2. 尝试别名映射
-                    mapped_id = alias_mapping.get(display_name)
-                    if mapped_id and mapped_id in config_names:
-                        logging.info(f"别名映射: {display_name} -> {mapped_id}")
-                    else:
-                        mapped_id = None
-                        logging.debug(f"频道未匹配: {display_name}")
+                # 查找匹配的config.txt频道
+                matched_name = find_matching_channel(epg_display_name, config_names, alias_mapping)
                 
-                if mapped_id:
-                    channel_map[channel_id] = mapped_id
-                    if mapped_id not in channels:
+                if matched_name:
+                    epg_channels_matched += 1
+                    channel_map[channel_id] = matched_name
+                    
+                    # 如果这个频道还没有被添加，创建新的频道节点
+                    if matched_name not in channels:
                         new_channel = deepcopy(channel)
-                        new_channel.set('id', mapped_id)
+                        new_channel.set('id', matched_name)
                         # 清理旧display-name
                         for dn in new_channel.findall('display-name'):
                             new_channel.remove(dn)
-                        ET.SubElement(new_channel, 'display-name', {'lang': 'zh'}).text = mapped_id
-                        channels[mapped_id] = new_channel
-                        logging.debug(f"添加频道: {mapped_id} (原名称: {display_name})")
+                        ET.SubElement(new_channel, 'display-name', {'lang': 'zh'}).text = matched_name
+                        channels[matched_name] = new_channel
+                        logging.debug(f"添加频道到输出: {matched_name}")
             
             # 处理节目信息
             prog_count = 0
             for programme in root.findall('programme'):
                 original_id = programme.get('channel')
-                mapped_id = channel_map.get(original_id)
-                if not mapped_id:
+                matched_name = channel_map.get(original_id)
+                
+                if not matched_name:
                     continue
                 
-                # 处理所有节目（稍后统一过滤）
-                processed_prog = process_programme(programme, mapped_id)
+                # 处理节目
+                processed_prog = process_programme(programme, matched_name)
                 if processed_prog is not None:
-                    programmes[mapped_id].append(processed_prog)
+                    programmes[matched_name].append(processed_prog)
                     prog_count += 1
-                
-            logging.info(f"Processed: {len(channel_map)} channels, {prog_count} programmes from {url}")
+            
+            logging.info(f"从 {url} 处理: {epg_channels_matched}/{epg_channels_processed} 个频道匹配, {prog_count} 个节目")
             
         except requests.exceptions.Timeout:
             logging.warning(f"请求超时: {url}")
@@ -597,30 +584,52 @@ def process_sources(urls, alias_mapping, config_names):
             logging.error(f"网络请求失败 {url}: {e}")
         except Exception as e:
             logging.error(f"处理失败 {url}: {e}")
-            logging.error(f"URL: {url}")
-            logging.error(f"错误详情: {str(e)}")
     
     # 按日期过滤节目：保留昨天、今天和未来节目
     programmes = filter_programs_by_date(programmes)
     
+    # 检查哪些目标频道没有被找到
+    missing_channels = config_names - set(channels.keys())
+    if missing_channels:
+        logging.warning(f"以下 {len(missing_channels)} 个目标频道未在任何EPG源中找到:")
+        for channel in sorted(missing_channels):
+            logging.warning(f"  - {channel}")
+    
     # 生成最终XML
     root = ET.Element('tv')
-    # 添加频道
-    for channel in channels.values():
-        root.append(deepcopy(channel))
+    
+    # 添加频道（只添加config_names中定义的频道）
+    channels_added = 0
+    for channel_name in sorted(config_names):
+        if channel_name in channels:
+            root.append(deepcopy(channels[channel_name]))
+            channels_added += 1
+        else:
+            # 即使没有节目，也创建一个空的频道节点
+            channel_node = ET.Element('channel', {'id': channel_name})
+            ET.SubElement(channel_node, 'display-name', {'lang': 'zh'}).text = channel_name
+            root.append(channel_node)
+            channels_added += 1
+    
+    logging.info(f"添加了 {channels_added} 个频道到输出（包括空频道）")
     
     # 添加节目（应用完整的去重策略）
     total_progs = 0
-    for channel_id, progs in programmes.items():
-        if not progs:
-            continue
-            
-        # 应用去重策略
-        unique_progs = deduplicate_programs(progs)
-        total_progs += len(unique_progs)
-        root.extend(unique_progs)
+    channels_with_programs = 0
+    
+    for channel_name in sorted(config_names):
+        progs = programmes.get(channel_name, [])
         
-        logging.info(f"频道 {channel_id}: 原始节目 {len(progs)} 个, 去重后 {len(unique_progs)} 个")
+        if progs:
+            channels_with_programs += 1
+            # 应用去重策略
+            unique_progs = deduplicate_programs(progs)
+            total_progs += len(unique_progs)
+            root.extend(unique_progs)
+            
+            logging.info(f"频道 {channel_name}: 原始节目 {len(progs)} 个, 去重后 {len(unique_progs)} 个")
+    
+    logging.info(f"有节目的频道: {channels_with_programs}/{len(config_names)} 个")
     
     # 保存压缩文件
     xml_str = ET.tostring(root, encoding='utf-8')
@@ -629,7 +638,7 @@ def process_sources(urls, alias_mapping, config_names):
             f.write(b'<?xml version="1.0" encoding="utf-8"?>\n')
             f.write(b'<!DOCTYPE tv SYSTEM "xmltv.dtd">\n')
             f.write(xml_str)
-        logging.info(f"EPG生成完成: {len(channels)} 个频道, {total_progs} 个节目")
+        logging.info(f"EPG生成完成: {channels_added} 个频道, {total_progs} 个节目")
         
         # 显示文件大小
         file_size = os.path.getsize(output_file_gz)
@@ -650,7 +659,7 @@ if __name__ == "__main__":
     
     # 数据源列表
     epg_urls = [
- 	'https://raw.githubusercontent.com/lxxcp/epg/main/tvmao.xml.gz',
+        'https://raw.githubusercontent.com/lxxcp/epg/main/tvmao.xml.gz',
         'https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz',
         'https://raw.githubusercontent.com/Li-Xingyu/ZJ_IPTV_EPG/main/epg.xml',
         'https://raw.githubusercontent.com/zzq1234567890/epg/main/swepg.xml.gz',
