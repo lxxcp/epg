@@ -14,7 +14,6 @@ from collections import defaultdict
 config_file = os.path.join(os.path.dirname(__file__), 'config.txt')
 output_file_gz = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'e.xml.gz')
 TIMEZONE = pytz.timezone('Asia/Shanghai')
-MAX_DAYS_TO_KEEP = 14  # 最多保留多少天的节目数据
 
 def load_config_and_alias(config_file):
     """从合并的配置文件中加载频道名称和别名映射"""
@@ -396,14 +395,21 @@ def deduplicate_programs(programs_list):
     
     return final_programs
 
-def filter_old_programs(programs_by_channel, max_days=MAX_DAYS_TO_KEEP):
-    """过滤掉太旧的节目"""
+def filter_programs_by_date(programs_by_channel):
+    """过滤节目：保留当天、前一天以及当天之后的所有节目"""
     now = datetime.datetime.now(TIMEZONE)
-    cutoff_date = now - datetime.timedelta(days=max_days)
+    
+    # 当天的开始时间（00:00:00）
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    # 前一天的开始时间
+    yesterday_start = today_start - datetime.timedelta(days=1)
     
     filtered_programs = {}
     total_before = 0
     total_after = 0
+    yesterday_count = 0
+    today_count = 0
+    future_count = 0
     
     for channel_id, programs in programs_by_channel.items():
         filtered = []
@@ -411,8 +417,18 @@ def filter_old_programs(programs_by_channel, max_days=MAX_DAYS_TO_KEEP):
             start_time_str = prog.get('start', '')
             start_time = parse_epg_time(start_time_str)
             
-            if start_time and start_time >= cutoff_date:
-                filtered.append(prog)
+            if start_time:
+                # 保留：前一天、当天、以及当天之后的所有节目
+                if start_time >= yesterday_start:
+                    filtered.append(prog)
+                    
+                    # 统计各类节目数量
+                    if start_time < today_start:
+                        yesterday_count += 1
+                    elif start_time < today_start + datetime.timedelta(days=1):
+                        today_count += 1
+                    else:
+                        future_count += 1
         
         filtered_programs[channel_id] = filtered
         total_before += len(programs)
@@ -421,15 +437,30 @@ def filter_old_programs(programs_by_channel, max_days=MAX_DAYS_TO_KEEP):
         if len(programs) != len(filtered):
             logging.info(f"频道 {channel_id}: 过滤掉 {len(programs) - len(filtered)} 个过旧节目")
     
-    logging.info(f"节目时间过滤: 从 {total_before} 个过滤到 {total_after} 个 (保留最近 {max_days} 天)")
+    # 统计信息
+    logging.info(f"节目时间过滤: 从 {total_before} 个过滤到 {total_after} 个")
+    logging.info(f"节目分布 - 昨天: {yesterday_count} 个, 今天: {today_count} 个, 未来: {future_count} 个")
+    
+    # 计算节目覆盖的时间范围
+    all_filtered_programs = []
+    for progs in filtered_programs.values():
+        all_filtered_programs.extend(progs)
+    
+    if all_filtered_programs:
+        sorted_progs = sorted(all_filtered_programs, key=lambda p: p.get('start', ''))
+        first_start = parse_epg_time(sorted_progs[0].get('start', ''))
+        last_start = parse_epg_time(sorted_progs[-1].get('start', ''))
+        if first_start is not None and last_start is not None:
+            days_covered = (last_start.date() - first_start.date()).days + 1
+            logging.info(f"节目覆盖时间范围: {first_start.date()} 到 {last_start.date()} ({days_covered} 天)")
+    
     return filtered_programs
 
 def process_sources(urls, alias_mapping, config_names):
     channels = {}  # 频道ID: 频道节点
     programmes = defaultdict(list)  # 频道ID: [节目列表]
     
-    # 不再限制只抓取今天的节目
-    logging.info("开始抓取EPG数据（不限制日期）")
+    logging.info("开始抓取EPG数据（保留昨天、今天和未来节目）")
 
     for url_index, url in enumerate(urls):
         try:
@@ -502,7 +533,7 @@ def process_sources(urls, alias_mapping, config_names):
                 if not mapped_id:
                     continue
                 
-                # 不再进行时间过滤，处理所有节目
+                # 处理所有节目（稍后统一过滤）
                 processed_prog = process_programme(programme, mapped_id)
                 if processed_prog is not None:
                     programmes[mapped_id].append(processed_prog)
@@ -517,8 +548,8 @@ def process_sources(urls, alias_mapping, config_names):
         except Exception as e:
             logging.error(f"处理失败 {url}: {e}")
     
-    # 过滤掉太旧的节目（可选，避免文件过大）
-    programmes = filter_old_programs(programmes, MAX_DAYS_TO_KEEP)
+    # 按日期过滤节目：保留昨天、今天和未来节目
+    programmes = filter_programs_by_date(programmes)
     
     # 生成最终XML
     root = ET.Element('tv')
@@ -538,15 +569,6 @@ def process_sources(urls, alias_mapping, config_names):
         root.extend(unique_progs)
         
         logging.info(f"频道 {channel_id}: 原始节目 {len(progs)} 个, 去重后 {len(unique_progs)} 个")
-        
-        # 记录最早的节目时间
-        if unique_progs:
-            sorted_progs = sorted(unique_progs, key=lambda p: p.get('start', ''))
-            first_start = parse_epg_time(sorted_progs[0].get('start', ''))
-            last_start = parse_epg_time(sorted_progs[-1].get('start', ''))
-            if first_start is not None and last_start is not None:
-                days_covered = (last_start - first_start).days + 1
-                logging.info(f"频道 {channel_id} 节目覆盖: {first_start.date()} 到 {last_start.date()} ({days_covered} 天)")
     
     # 保存压缩文件
     xml_str = ET.tostring(root, encoding='utf-8')
@@ -568,7 +590,7 @@ if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-d %H:%M:%S'
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
     
     # 初始化配置（从合并的文件中加载）
@@ -576,7 +598,7 @@ if __name__ == "__main__":
     
     # 数据源列表
     epg_urls = [
-        'https://raw.githubusercontent.com/lxxcp/epg/main/tvmao.xml.gz',
+         'https://raw.githubusercontent.com/lxxcp/epg/main/tvmao.xml.gz',
         'https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz',
         'https://raw.githubusercontent.com/Li-Xingyu/ZJ_IPTV_EPG/main/epg.xml',
         'https://raw.githubusercontent.com/zzq1234567890/epg/main/swepg.xml.gz',
@@ -602,9 +624,12 @@ if __name__ == "__main__":
         'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgguangdong.xml.gz',
         'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgnewguangdong.xml',
         'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgnewshanghai.xml',
-        'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgyidong.xml.xml',
+        'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgyidong.xml',
+        'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgmytvsuper.xml',
+        'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgtvsou.xml',
         'https://epg.136605.xyz/9days.xml',
         'https://raw.githubusercontent.com/peterHchina/iptv/main/EPG.xml',
+
     ]
     
     process_sources(epg_urls, alias_mapping, config_names)
