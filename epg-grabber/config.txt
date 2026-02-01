@@ -3,7 +3,7 @@ CCTV-2 财经,CCTV2,CCTV-2
 CCTV-3 综艺,CCTV3,CCTV-3
 CCTV-4 中文国际,CCTV4,CCTV-3
 CCTV-5 体育,CCTV5,CCTV-5
-CCTV-5+ 体育赛事,CCTV5PLUS,cctv5+,CCTV-5+
+CCTV-5+ 体育赛事,CCTV5PLUS,cctv5+,CCTV-5+,CCTV5+
 CCTV-6 电影,CCTV6,CCTV-6
 CCTV-7 国防军事,CCTV7,CCTV-7
 CCTV-8 电视剧,CCTV8,CCTV-8
@@ -20,12 +20,12 @@ CCTV-4 欧洲,CCTV-4 (欧洲),CCTV-4 中文国际欧洲,CCTV4欧洲,CCTV4EUO
 CCTV-4 美洲,CCTV-4 (美洲),CCTV-4 中文国际美洲,CCTV4美洲,CCTV4AME
 CCTV4K,CCTV-4K,CCTV4K 超高清,CCTV-4K超高清
 CCTV8K,CCTV8K 超高清
-CGTN,CGTN英语
+CGTN,CGTN英语,CGTN(中国环球电视网)英语频道
 CGTN俄语,CCTV-Русский,CGTN俄罗斯语
 CGTN法语,CCTV-Français
 CGTN西语,CCTV-Español,CGTN西班牙语
 CGTN阿语,CCTV-العربية,CGTN阿拉伯语
-CGTN纪录,CCTV-9 纪录(英),CCTV-News,cgtn英文记录片,CGTN英文记录
+CGTN纪录,CCTV-9 纪录(英),cgtn英文记录片,CGTN英文记录,CGTN(中国环球电视网)记录频道
 CCTV风云剧场,风云剧场,CCTV-风云剧场,CCTV风云剧场HD
 CCTV第一剧场,第一剧场,CCTV-第一剧场,CCTV第一剧场HD
 CCTV怀旧剧场,怀旧剧场,CCTV-怀旧剧场,CCTV怀旧剧场HD,CCTV怀旧剧圿,CCTV-怀旧剧圿
@@ -133,7 +133,7 @@ CETV早期教育,早期教育,CCTV早期教育
 鹰潭公共
 吉安综合
 吉安公共
-景德镇新闻综合
+景德镇新闻综合,景德镇综合
 宜春综合,宜春新闻综合
 宜春法治民生
 上饶新闻综合
@@ -3530,8 +3530,8 @@ IPTV美妆,美妆
 IPTV解密,解密
 IPTV鉴赏,鉴赏
 IPTV高网,高网
-新华全球连线
-新华社
+新华全球连线,CNC英文
+新华社,CNC中文
 探索频道
 探索剧场
 探索亚洲
