@@ -537,6 +537,7 @@ if __name__ == "__main__":
         'https://gitee.com/taksssss/tv/raw/main/epg/51zmte1.xml.gz',
         'https://gitee.com/taksssss/tv/raw/main/epg/51zmte2.xml.gz',
         'https://epg.zsdc.eu.org/t.xml',
+       'https://epg.webnet.cloudns.pro/epg/epg.xml.gz',
         'http://liliu.serv00.net/epg/all.xml.gz',
  	'https://epg.pw/xmltv/epg_CN.xml.gz',
         'https://epg.pw/xmltv/epg_TW.xml.gz',
