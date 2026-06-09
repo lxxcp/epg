@@ -530,7 +530,7 @@ if __name__ == "__main__":
     
     # 数据源列表
     epg_urls = [
-        'https://raw.githubusercontent.com/lxxcp/epg/main/tvmao.xml.gz',
+        'https://raw.githubusercontent.com/sggc/SD-EPG/refs/heads/main/EPG/sggc-desc.xml.gz',
         'https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz',
         'https://raw.githubusercontent.com/Li-Xingyu/ZJ_IPTV_EPG/main/epg.xml',
         'https://raw.githubusercontent.com/zzq1234567890/epg/main/swepg.xml.gz',
@@ -554,7 +554,7 @@ if __name__ == "__main__":
         'https://raw.githubusercontent.com/zsz520/epg/main/cqlaidian.xml.gz',
         'https://raw.githubusercontent.com/zsz520/epg/main/fjyd.xml.gz',
         'https://raw.githubusercontent.com/zsz520/epg/main/migu.xml.gz',
-        'http://139.199.229.98:8989/EPG',
+        'https://epg.tv.darwinchow.com/epg.xml',
         'https://raw.githubusercontent.com/zzq12345/epgtest/main/epganywhere.xml',
  	'https://raw.githubusercontent.com/zzq12345/epgtest/main/epgbaidu.xml',
         'https://raw.githubusercontent.com/zzq12345/epgtest/main/epghebeiiptv1.xml',
