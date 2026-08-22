@@ -534,6 +534,7 @@ if __name__ == "__main__":
         'https://raw.githubusercontent.com/sumingyd/xml/main/epg.xml',
         'https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz',
         'https://raw.githubusercontent.com/Li-Xingyu/ZJ_IPTV_EPG/main/epg.xml',
+        'https://raw.githubusercontent.com/mytv-android/SCTV_EPG/main/epg.xml',
         'https://raw.githubusercontent.com/zzq1234567890/epg/main/swepg.xml.gz',
         'https://gitee.com/taksssss/tv/raw/main/epg/51zmte1.xml.gz',
         'https://gitee.com/taksssss/tv/raw/main/epg/51zmte2.xml.gz',
