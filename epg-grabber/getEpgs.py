@@ -448,11 +448,8 @@ def process_sources(urls, alias_mapping, config_names):
                 if mapped_id:
                     channel_map[channel_id] = mapped_id
                     if mapped_id not in channels:
-                        new_channel = deepcopy(channel)
-                        new_channel.set('id', mapped_id)
-                        # 清理旧display-name
-                        for dn in new_channel.findall('display-name'):
-                            new_channel.remove(dn)
+                        # 方法三：完全重建 channel 节点，只保留 id 和 display-name
+                        new_channel = ET.Element('channel', {'id': mapped_id})
                         ET.SubElement(new_channel, 'display-name', {'lang': 'zh'}).text = mapped_id
                         channels[mapped_id] = new_channel
             
@@ -540,9 +537,9 @@ if __name__ == "__main__":
         'https://gitee.com/taksssss/tv/raw/main/epg/51zmte2.xml.gz',
         'http://epg.51zmt.top:8000/e1.xml.gz',
         'https://epg.zsdc.eu.org/t.xml',
-       'https://epg.webnet.cloudns.pro/epg/epg.xml.gz',
+        'https://epg.webnet.cloudns.pro/epg/epg.xml.gz',
         'http://liliu.serv00.net/epg/all.xml.gz',
- 	'https://epg.pw/xmltv/epg_CN.xml.gz',
+        'https://epg.pw/xmltv/epg_CN.xml.gz',
         'https://epg.pw/xmltv/epg_TW.xml.gz',
         'https://epg.pw/xmltv/epg_HK.xml.gz',
         'https://gitee.com/taksssss/tv/raw/main/epg/erw.xml.gz',
@@ -560,7 +557,6 @@ if __name__ == "__main__":
         'https://epg.tv.darwinchow.com/epg.xml',
         'https://epg.136605.xyz/9days.xml',
         'https://raw.githubusercontent.com/peterHchina/iptv/main/EPG.xml',
-
     ]
     
     process_sources(epg_urls, alias_mapping, config_names)
