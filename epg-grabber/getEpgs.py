@@ -535,7 +535,9 @@ if __name__ == "__main__":
         'https://raw.githubusercontent.com/zzq1234567890/epg/main/swepg.xml.gz',
         'https://gitee.com/taksssss/tv/raw/main/epg/51zmte1.xml.gz',
         'https://gitee.com/taksssss/tv/raw/main/epg/51zmte2.xml.gz',
+        'http://epg.51zmt.top:8000/e.xml.gz',
         'http://epg.51zmt.top:8000/e1.xml.gz',
+        'http://epg.51zmt.top:8000/e2.xml.gz',
         'https://epg.zsdc.eu.org/t.xml',
         'https://epg.webnet.cloudns.pro/epg/epg.xml.gz',
         'http://liliu.serv00.net/epg/all.xml.gz',
@@ -556,6 +558,7 @@ if __name__ == "__main__":
         'https://raw.githubusercontent.com/zsz520/epg/main/migu.xml.gz',
         'https://epg.tv.darwinchow.com/epg.xml',
         'https://epg.136605.xyz/9days.xml',
+        'https://gitee.com/gsls200808/xmltvepg/raw/master/e7.xml.gz',
         'https://raw.githubusercontent.com/peterHchina/iptv/main/EPG.xml',
     ]
     
