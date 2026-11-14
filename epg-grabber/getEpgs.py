@@ -528,7 +528,7 @@ if __name__ == "__main__":
     # 数据源列表
     epg_urls = [
         'https://raw.githubusercontent.com/sggc/SD-EPG/refs/heads/main/EPG/sggc-desc.xml.gz',
-        'https://raw.githubusercontent.com/sumingyd/xml/main/epg.xml',
+        'https://raw.githubusercontent.com/sumingyd/xml/main/epg.xml.gz',
         'https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz',     
         'https://raw.githubusercontent.com/zzq1234567890/epg/main/swepg.xml.gz',
         'https://raw.githubusercontent.com/tanst/IPTV/main/epg.xml.gz',  
@@ -539,7 +539,7 @@ if __name__ == "__main__":
         'http://epg.51zmt.top:8000/e2.xml.gz',
         'https://epg.zsdc.eu.org/t.xml',
         'https://epg.webnet.cloudns.pro/epg/epg.xml.gz',
-        'http://liliu.serv00.net/epg/all.xml.gz',
+        'http://liliu.serv00.net/epg/cn.xml.gz',
         'https://epg.pw/xmltv/epg_CN.xml.gz',
         'https://epg.pw/xmltv/epg_TW.xml.gz',
         'https://epg.pw/xmltv/epg_HK.xml.gz',
