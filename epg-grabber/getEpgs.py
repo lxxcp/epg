@@ -538,6 +538,7 @@ if __name__ == "__main__":
         'http://epg.51zmt.top:8000/e1.xml.gz',
         'http://epg.51zmt.top:8000/e2.xml.gz',
         'https://epg.zsdc.eu.org/t.xml',
+        'https://epg.alect.eu.org/epg.xml',
         'https://epg.webnet.cloudns.pro/epg/epg.xml.gz',
         'http://liliu.serv00.net/epg/cn.xml.gz',
         'https://epg.pw/xmltv/epg_CN.xml.gz',
